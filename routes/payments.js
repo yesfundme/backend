@@ -54,6 +54,12 @@ router.post('/initialize', async (req, res) => {
     const net_amount = numericAmount - platform_fee;
     const payment_reference = `FUNDME-${Date.now()}-${nanoid(8)}`;
 
+    // Paystack's charge API requires an email even for M-Pesa payments.
+    // Supporters don't provide one, so we derive a stand-in from their phone
+    // number (digits only) rather than the payment reference.
+    const phoneDigits = String(phone).replace(/\D/g, '');
+    const supporterEmail = `${phoneDigits}@gmail.com`;
+
     const { data: payment, error } = await supabase
       .from('payments')
       .insert({
@@ -92,7 +98,7 @@ router.post('/initialize', async (req, res) => {
     // Amount is sent in the base currency unit expected by Paystack for KES.
     const chargeResponse = await paystack.post('/charge', {
       amount: Math.round(numericAmount * 100),
-      email: `${payment_reference.toLowerCase()}@fundme.co.ke`,
+      email: supporterEmail,
       currency: 'KES',
       mobile_money: { phone, provider: 'mpesa' },
       reference: payment_reference,
@@ -106,8 +112,11 @@ router.post('/initialize', async (req, res) => {
         'Check your phone and enter your M-Pesa PIN to complete this support.'
     });
   } catch (err) {
-    console.error('Initialize payment error:', err.response?.data || err.message);
-    res.status(500).json({ error: 'Could not start the M-Pesa payment. Please try again.' });
+    const paystackError = err.response?.data;
+    console.error('Initialize payment error:', paystackError || err.message);
+    res.status(500).json({
+      error: paystackError?.message || 'Could not start the M-Pesa payment. Please try again.'
+    });
   }
 });
 
