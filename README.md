@@ -17,10 +17,12 @@ fundme/
    - `SUPABASE_URL` / `SUPABASE_SERVICE_KEY` — from your Supabase project settings
    - `PAYSTACK_SECRET_KEY` / `PAYSTACK_PUBLIC_KEY` — from your Paystack dashboard
    - `JWT_SECRET` — any long random string
-3. In the Supabase SQL editor, run `backend/db/schema.sql` to create all tables and seed the default support items (Coffee, Popcorn, Chocolate, Flower, Smile, Bazuu/FUNDme Support).
-4. `npm start` (or `npm run dev` with nodemon). Deploys cleanly to Render, matching your existing FXS Pay / KEA setup.
-5. In your Paystack dashboard, add a webhook pointing to `https://<your-backend>/api/payments/webhook`. This is the **only** place a payment is ever marked successful — the frontend never marks itself as paid.
-6. To make an admin: register a normal account, then in Supabase manually set that user's `role` column to `admin`.
+3. In the Supabase SQL editor, run `backend/db/schema.sql` to create all tables and seed the default support items (Coffee, Popcorn, Chocolate, Flower, Smile, FUNDme Support).
+4. **Create the image storage bucket**: Supabase dashboard → Storage → New bucket → name it exactly `campaign-images` → toggle **Public bucket** on (so uploaded photos are viewable without auth). No SQL needed for this part.
+5. `npm install` again if you're pulling this update (adds the `multer` dependency used for image uploads).
+6. `npm start` (or `npm run dev` with nodemon). Deploys cleanly to Render, matching your existing FXS Pay / KEA setup.
+7. In your Paystack dashboard, add a webhook pointing to `https://<your-backend>/api/payments/webhook`. This is the **only** place a payment is ever marked successful — the frontend never marks itself as paid.
+8. To make an admin: register a normal account, then in Supabase manually set that user's `role` column to `admin`.
 
 ## Frontend setup
 
@@ -44,5 +46,5 @@ fundme/
 
 - **Forgot password** — the frontend page exists as a placeholder; add a real reset-token email flow (e.g. via Supabase Auth or a transactional email provider).
 - **Transaction line-items on the owner dashboard** — the backend already returns full payment records per campaign; the dashboard currently just shows the supporter count, so add a `GET /api/campaigns/:id/transactions` (owner-only) call and render it as a table like the example in the spec.
-- **Image uploads** — campaign images are currently a URL field; wire up Supabase Storage if you want direct upload instead of pasting a link.
+- **Image uploads** — done: campaign images now upload directly to Supabase Storage (`campaign-images` bucket) via `POST /api/uploads/campaign-image`, no more pasted URLs.
 - **Rate limiting** is in place on auth/payment routes at the app level; consider adding Supabase row-level security policies too, since the backend currently relies on the service-role key and its own authorization checks.

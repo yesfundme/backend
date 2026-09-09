@@ -8,6 +8,7 @@ const campaignRoutes = require('./routes/campaigns');
 const paymentRoutes = require('./routes/payments');
 const withdrawalRoutes = require('./routes/withdrawals');
 const adminRoutes = require('./routes/admin');
+const uploadRoutes = require('./routes/uploads');
 
 const app = express();
 
@@ -27,6 +28,7 @@ app.use('/api/campaigns', campaignRoutes);
 app.use('/api/payments', paymentLimiter, paymentRoutes);
 app.use('/api/withdrawals', withdrawalRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/uploads', uploadRoutes);
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 
