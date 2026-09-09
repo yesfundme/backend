@@ -60,6 +60,18 @@ router.post('/initialize', async (req, res) => {
     const phoneDigits = String(phone).replace(/\D/g, '');
     const supporterEmail = `${phoneDigits}@gmail.com`;
 
+    // Paystack expects Kenyan mobile money numbers in international format
+    // (2547XXXXXXXX / 2541XXXXXXXX), but supporters naturally type the local
+    // 07XX/01XX format. Normalize whatever they enter before sending it on.
+    function toPaystackPhone(raw) {
+      let digits = String(raw).replace(/\D/g, '');
+      if (digits.startsWith('0')) digits = '254' + digits.slice(1);      // 0712345678 -> 254712345678
+      else if (digits.startsWith('7') || digits.startsWith('1')) digits = '254' + digits; // 712345678 -> 254712345678
+      else if (digits.startsWith('254')) { /* already correct */ }
+      return `+${digits}`;
+    }
+    const paystackPhone = toPaystackPhone(phone);
+
     const { data: payment, error } = await supabase
       .from('payments')
       .insert({
@@ -100,7 +112,7 @@ router.post('/initialize', async (req, res) => {
       amount: Math.round(numericAmount * 100),
       email: supporterEmail,
       currency: 'KES',
-      mobile_money: { phone, provider: 'mpesa' },
+      mobile_money: { phone: paystackPhone, provider: 'mpesa' },
       reference: payment_reference,
       metadata: { campaign_id, payment_id: payment.id }
     });
