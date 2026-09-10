@@ -41,7 +41,7 @@ router.post('/campaign-image', requireAuth, upload.single('image'), async (req, 
     res.json({ url: data.publicUrl });
   } catch (err) {
     console.error('Image upload error:', err.message || err);
-    res.status(500).json({ error: 'Could not upload image. Please try again.' });
+    res.status(500).json({ error: err.message || 'Could not upload image. Please try again.' });
   }
 });
 
