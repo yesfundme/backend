@@ -22,20 +22,23 @@ function computeFee(amount, { percent, flat }) {
 }
 
 // POST /api/payments/initialize
-// body: { campaign_id, amount, phone, supporter_name, message, show_name_publicly,
+// body: { campaign_id, amount, method: 'mpesa' | 'card', phone (mpesa only),
+//         callback_url (card only), supporter_name, message, show_name_publicly,
 //         is_anonymous, items: [{ support_item_id, name, quantity, unit_price }] }
 router.post('/initialize', async (req, res) => {
   try {
     const {
-      campaign_id, amount, phone, supporter_name, message,
+      campaign_id, amount, method, phone, callback_url, supporter_name, message,
       show_name_publicly, is_anonymous, items
     } = req.body;
+
+    const paymentMethod = method === 'card' ? 'card' : 'mpesa';
 
     const numericAmount = Number(amount);
     if (!campaign_id || !numericAmount || numericAmount < 1) {
       return res.status(400).json({ error: 'A valid campaign and amount are required' });
     }
-    if (!phone) {
+    if (paymentMethod === 'mpesa' && !phone) {
       return res.status(400).json({ error: 'An M-Pesa phone number is required' });
     }
 
@@ -54,23 +57,28 @@ router.post('/initialize', async (req, res) => {
     const net_amount = numericAmount - platform_fee;
     const payment_reference = `FUNDME-${Date.now()}-${nanoid(8)}`;
 
-    // Paystack's charge API requires an email even for M-Pesa payments.
-    // Supporters don't provide one, so we derive a stand-in from their phone
-    // number (digits only) rather than the payment reference.
-    const phoneDigits = String(phone).replace(/\D/g, '');
-    const supporterEmail = `${phoneDigits}@gmail.com`;
+    // Paystack's charge/transaction APIs require an email even though
+    // supporters only give a phone number for M-Pesa. Card supporters may not
+    // give either, so fall back to a reference-based placeholder for card.
+    let supporterEmail;
+    let paystackPhone;
+    if (paymentMethod === 'mpesa') {
+      const phoneDigits = String(phone).replace(/\D/g, '');
+      supporterEmail = `${phoneDigits}@gmail.com`;
 
-    // Paystack expects Kenyan mobile money numbers in international format
-    // (2547XXXXXXXX / 2541XXXXXXXX), but supporters naturally type the local
-    // 07XX/01XX format. Normalize whatever they enter before sending it on.
-    function toPaystackPhone(raw) {
-      let digits = String(raw).replace(/\D/g, '');
-      if (digits.startsWith('0')) digits = '254' + digits.slice(1);      // 0712345678 -> 254712345678
-      else if (digits.startsWith('7') || digits.startsWith('1')) digits = '254' + digits; // 712345678 -> 254712345678
-      else if (digits.startsWith('254')) { /* already correct */ }
-      return `+${digits}`;
+      // Paystack expects Kenyan mobile money numbers in international format
+      // (2547XXXXXXXX / 2541XXXXXXXX), but supporters naturally type the
+      // local 07XX/01XX format. Normalize whatever they enter.
+      function toPaystackPhone(raw) {
+        let digits = String(raw).replace(/\D/g, '');
+        if (digits.startsWith('0')) digits = '254' + digits.slice(1);
+        else if (digits.startsWith('7') || digits.startsWith('1')) digits = '254' + digits;
+        return `+${digits}`;
+      }
+      paystackPhone = toPaystackPhone(phone);
+    } else {
+      supporterEmail = `${payment_reference.toLowerCase()}@fundme.co.ke`;
     }
-    const paystackPhone = toPaystackPhone(phone);
 
     const { data: payment, error } = await supabase
       .from('payments')
@@ -85,7 +93,7 @@ router.post('/initialize', async (req, res) => {
         net_amount,
         currency: 'KES',
         payment_reference,
-        payment_method: 'mpesa',
+        payment_method: paymentMethod,
         status: 'pending'
       })
       .select()
@@ -106,22 +114,44 @@ router.post('/initialize', async (req, res) => {
       if (rows.length) await supabase.from('payment_items').insert(rows);
     }
 
-    // Trigger the Paystack M-Pesa (mobile money) charge.
-    // Amount is sent in the base currency unit expected by Paystack for KES.
-    const chargeResponse = await paystack.post('/charge', {
+    if (paymentMethod === 'mpesa') {
+      // Trigger the Paystack M-Pesa (mobile money) STK push.
+      const chargeResponse = await paystack.post('/charge', {
+        amount: Math.round(numericAmount * 100),
+        email: supporterEmail,
+        currency: 'KES',
+        mobile_money: { phone: paystackPhone, provider: 'mpesa' },
+        reference: payment_reference,
+        metadata: { campaign_id, payment_id: payment.id }
+      });
+
+      return res.json({
+        method: 'mpesa',
+        reference: payment_reference,
+        status: chargeResponse.data?.data?.status || 'pending',
+        display_text: chargeResponse.data?.data?.display_text ||
+          'Check your phone and enter your M-Pesa PIN to complete this support.'
+      });
+    }
+
+    // Card payment: Paystack's standard hosted checkout. The supporter is
+    // redirected to authorization_url to enter card details, then Paystack
+    // sends them back to callback_url. The webhook (not this response, and
+    // not the redirect) is still the only thing that ever marks the payment
+    // successful.
+    const initResponse = await paystack.post('/transaction/initialize', {
       amount: Math.round(numericAmount * 100),
       email: supporterEmail,
       currency: 'KES',
-      mobile_money: { phone: paystackPhone, provider: 'mpesa' },
       reference: payment_reference,
+      callback_url: callback_url || undefined,
       metadata: { campaign_id, payment_id: payment.id }
     });
 
     res.json({
+      method: 'card',
       reference: payment_reference,
-      status: chargeResponse.data?.data?.status || 'pending',
-      display_text: chargeResponse.data?.data?.display_text ||
-        'Check your phone and enter your M-Pesa PIN to complete this support.'
+      authorization_url: initResponse.data?.data?.authorization_url
     });
   } catch (err) {
     const paystackError = err.response?.data;
