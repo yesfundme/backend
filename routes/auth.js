@@ -17,7 +17,7 @@ function signToken(user) {
 // No OTP - account is created immediately.
 router.post('/register', async (req, res) => {
   try {
-    const { full_name, email, password, confirm_password } = req.body;
+    const { full_name, email, password, confirm_password, date_of_birth, country, id_number } = req.body;
 
     if (!full_name || !email || !password) {
       return res.status(400).json({ error: 'Full name, email and password are required' });
@@ -27,6 +27,43 @@ router.post('/register', async (req, res) => {
     }
     if (password.length < 6) {
       return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+
+    if (!date_of_birth) {
+      return res.status(400).json({ error: 'Date of birth is required' });
+    }
+
+    const dob = new Date(date_of_birth);
+    if (isNaN(dob.getTime())) {
+      return res.status(400).json({ error: 'Please enter a valid date of birth' });
+    }
+
+    // Campaign owners handle real money and must be able to enter an
+    // agreement, so registration is restricted to adults. Checked
+    // server-side so it can't be bypassed from the browser.
+    const today = new Date();
+    let age = today.getFullYear() - dob.getFullYear();
+    const monthDiff = today.getMonth() - dob.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) age -= 1;
+
+    if (age < 18) {
+      return res.status(400).json({ error: 'You must be at least 18 years old to create an account' });
+    }
+    if (age > 120) {
+      return res.status(400).json({ error: 'Please enter a valid date of birth' });
+    }
+
+    // National ID is required for Kenyan users only.
+    const userCountry = country || 'KE';
+    let cleanIdNumber = null;
+    if (userCountry === 'KE') {
+      if (!id_number || !String(id_number).trim()) {
+        return res.status(400).json({ error: 'ID number is required for Kenyan users' });
+      }
+      cleanIdNumber = String(id_number).replace(/\D/g, '');
+      if (cleanIdNumber.length < 6 || cleanIdNumber.length > 10) {
+        return res.status(400).json({ error: 'Please enter a valid Kenyan ID number' });
+      }
     }
 
     const { data: existing } = await supabase
@@ -43,7 +80,15 @@ router.post('/register', async (req, res) => {
 
     const { data: user, error } = await supabase
       .from('users')
-      .insert({ full_name, email: email.toLowerCase(), password_hash, role: 'owner' })
+      .insert({
+        full_name,
+        email: email.toLowerCase(),
+        password_hash,
+        date_of_birth,
+        country: userCountry,
+        id_number: cleanIdNumber,
+        role: 'owner'
+      })
       .select()
       .single();
 

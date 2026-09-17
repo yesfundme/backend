@@ -35,7 +35,7 @@ router.post('/', requireAuth, async (req, res) => {
       image_url, beneficiary_name, phone_number, location, extra_info
     } = req.body;
 
-    const validCategories = ['funeral', 'wedding', 'hospital', 'campaign', 'birthday', 'food'];
+    const validCategories = ['funeral', 'wedding', 'hospital', 'campaign', 'birthday', 'food', 'other'];
     if (!title || !category || !validCategories.includes(category)) {
       return res.status(400).json({ error: 'Title and a valid category are required' });
     }
