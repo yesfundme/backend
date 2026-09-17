@@ -24,7 +24,7 @@ async function getAvailableBalance(campaignId) {
 // POST /api/withdrawals - request a withdrawal
 router.post('/', requireAuth, async (req, res) => {
   try {
-    const { campaign_id, amount, method, bank_name, account_name, account_number, mpesa_name, mpesa_phone } = req.body;
+    const { campaign_id, amount, method, bank_name, account_name, account_number, mpesa_name, mpesa_phone, id_card_path } = req.body;
     const numericAmount = Number(amount);
 
     if (!campaign_id || !numericAmount || numericAmount <= 0) {
@@ -32,6 +32,9 @@ router.post('/', requireAuth, async (req, res) => {
     }
     if (!['bank', 'mpesa'].includes(method)) {
       return res.status(400).json({ error: 'Choose a withdrawal method' });
+    }
+    if (!id_card_path) {
+      return res.status(400).json({ error: 'Please upload a photo of your ID card' });
     }
 
     const { data: campaign } = await supabase
@@ -65,6 +68,7 @@ router.post('/', requireAuth, async (req, res) => {
         method,
         bank_name, account_name, account_number,
         mpesa_name, mpesa_phone,
+        id_card_path,
         status: 'pending'
       })
       .select()
