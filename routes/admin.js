@@ -95,6 +95,29 @@ router.get('/withdrawals', async (req, res) => {
   res.json({ withdrawals: data });
 });
 
+// GET /api/admin/withdrawals/:id/id-document
+// Returns a short-lived signed URL to view the uploaded ID card. Never a
+// public link - this is the only way that private bucket is ever accessed,
+// and only admins can call this route.
+router.get('/withdrawals/:id/id-document', async (req, res) => {
+  const { data: withdrawal } = await supabase
+    .from('withdrawals')
+    .select('id_card_path')
+    .eq('id', req.params.id)
+    .maybeSingle();
+
+  if (!withdrawal || !withdrawal.id_card_path) {
+    return res.status(404).json({ error: 'No ID document on file for this withdrawal' });
+  }
+
+  const { data, error } = await supabase.storage
+    .from('id-documents')
+    .createSignedUrl(withdrawal.id_card_path, 300); // expires in 5 minutes
+
+  if (error) return res.status(500).json({ error: 'Could not generate a link to the ID document' });
+  res.json({ url: data.signedUrl });
+});
+
 // PATCH /api/admin/withdrawals/:id/status  { status: 'processing' | 'paid' | 'failed' }
 // Approving only moves a request to 'processing'. It is never auto-marked 'paid'.
 router.patch('/withdrawals/:id/status', async (req, res) => {
